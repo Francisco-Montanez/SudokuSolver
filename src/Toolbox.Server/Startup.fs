@@ -9,8 +9,10 @@ open Giraffe
 type Startup(cfg:IConfiguration, env:IWebHostEnvironment) =
     member _.ConfigureServices (services:IServiceCollection) =
         services
-            .AddApplicationInsightsTelemetry(cfg.["APPINSIGHTS_INSTRUMENTATIONKEY"])
+            .AddApplicationInsightsTelemetry(fun options ->
+                options.ConnectionString <- cfg.["APPINSIGHTS_CONNECTIONSTRING"])
             .AddGiraffe() |> ignore
+
     member _.Configure(app:IApplicationBuilder) =
         app
             .UseStaticFiles()
