@@ -7,6 +7,7 @@ open Fable.Core.JsInterop
 type Page =
     | Index
     | About
+    | SudokuSolver
 
 [<RequireQualifiedAccess>]
 module Page =
@@ -14,6 +15,7 @@ module Page =
 
     let parseFromUrlSegments = function
         | [ "about" ] -> Page.About
+        | [ "sudokusolver" ] -> Page.SudokuSolver
         | [ ] -> Page.Index
         | _ -> defaultPage
 
@@ -22,6 +24,7 @@ module Page =
     let toUrlSegments = function
         | Page.Index -> [ ] |> noQueryString
         | Page.About -> [ "about" ] |> noQueryString
+        | Page.SudokuSolver -> [ "sudokusolver" ] |> noQueryString
 
 [<RequireQualifiedAccess>]
 module Router =
