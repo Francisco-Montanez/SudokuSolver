@@ -6,66 +6,103 @@ open Feliz.UseElmish
 open Feliz.DaisyUI
 open Toolbox.Shared.API.SudokuSolver
 open Toolbox.Client.Server
+open Fable.Core.JsInterop
 
-type State = { CurrentBoard: Board; InitialBoard: Board; Possibilities: Possibilities }
-
-type Msg =
-    | CellValueChanged of int * int * string
-    | SolveSudoku of Board
-    | SolveSudokuResult of ServerResult<Board>
-
-let initboard: Board =
+let emptyBoard: Board =
     [|
-        [| Some 1; Some 9; None; Some 8; Some 5; Some 2; Some 4; Some 6; Some 7 |] // 3
-        [| Some 5; Some 2; Some 4; Some 6; Some 7; Some 1; Some 3; Some 9; Some 8 |]
-        [| Some 8; Some 7; Some 6; Some 3; Some 9; Some 4; Some 5; Some 2; Some 1 |]
-        [| Some 9; Some 5; Some 2; Some 4; Some 1; Some 6; Some 7; Some 8; Some 3 |]
-        [| Some 3; Some 1; Some 8; Some 5; Some 2; Some 7; Some 9; Some 4; Some 6 |]
-        [| Some 6; Some 4; Some 7; Some 9; Some 3; Some 8; Some 2; Some 1; Some 5 |]
-        [| Some 4; Some 3; Some 9; Some 1; Some 6; Some 5; Some 8; Some 7; Some 2 |]
-        [| Some 7; Some 6; Some 5; Some 2; Some 8; Some 9; Some 1; Some 3; Some 4 |]
-        [| Some 2; Some 8; Some 1; Some 7; Some 4; Some 3; Some 6; Some 5; Some 9 |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
+        [| None; None; None; None; None; None; None; None; None |]
     |]
 
-let init () = { InitialBoard = initboard; CurrentBoard = initboard; Possibilities = getPossibilities initboard }, Cmd.none
+type State = { CurrentBoard: Board; UserBoard: Board; Possibilities: Possibilities; FocusedCell: int*int }
+
+type Msg =
+    | CellValueChanged of int * int * int option
+    | SolveSudoku of Board
+    | SolveSudokuResult of ServerResult<Board>
+    | StartNewPuzzle
+    | MoveFocus of int * int
+
+let init () = { CurrentBoard = emptyBoard; UserBoard = emptyBoard; Possibilities = getPossibilities emptyBoard; FocusedCell = (0,0) }, Cmd.none
 
 let update (msg:Msg) (state:State) =
     match msg with
-    | CellValueChanged (row, col, value) ->
-        printfn "Set value for cell (%d, %d) to %A" row col value
-        let updatedBoard, possibilities = updateBoard state.InitialBoard  state.CurrentBoard (getPossibilities state.CurrentBoard) row col (if value = "" then None else Some <| int value)
-        { state with CurrentBoard = updatedBoard; Possibilities = possibilities }, Cmd.none
+    | CellValueChanged (row, col, valueOption) ->
+        printfn "Set value for cell (%d, %d) to %A" row col valueOption
+        let updatedBoard = Array.copy state.CurrentBoard
+        let updatedUserBoard = Array.copy state.UserBoard
+        updatedBoard.[row].[col] <- valueOption
+        updatedUserBoard.[row].[col] <- valueOption
+        { state with CurrentBoard = updatedBoard; UserBoard = updatedUserBoard }, Cmd.none
     | SolveSudoku board ->
         printfn "Solving sudoku puzzle..."
-        state, Cmd.OfAsync.eitherAsResult (fun _ -> Toolbox.Client.Server.service.SolveSudoku state.InitialBoard board) SolveSudokuResult
+        let updatedBoard, possibilities = updateBoard board (getPossibilities board) 0 0 (board.[0].[0])
+        { state with CurrentBoard = updatedBoard; Possibilities = possibilities }, Cmd.OfAsync.eitherAsResult (fun _ -> Toolbox.Client.Server.service.SolveSudoku updatedBoard) SolveSudokuResult
     | SolveSudokuResult (Ok board) -> 
         printfn $"Got sudoku result response: {board}"
         { state with CurrentBoard = board }, Cmd.none
     | SolveSudokuResult (Error error) -> 
         printfn $"Got sudoku result server error: {error}"
         state, Cmd.none
+    | StartNewPuzzle ->
+        printfn "Starting new puzzle..."
+        { state with 
+            CurrentBoard = emptyBoard
+            UserBoard = emptyBoard 
+            Possibilities = getPossibilities emptyBoard 
+        }, Cmd.none
+    | MoveFocus (dRow, dCol) ->
+        let newRow = (fst state.FocusedCell + dRow + 9) % 9
+        let newCol = (snd state.FocusedCell + dCol + 9) % 9
+        { state with FocusedCell = (newRow, newCol) }, Cmd.none
+
+let validateSingleDigit = function
+    | "" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" -> true
+    | _ -> false
 
 let cell (row: int) (col: int) (state: State) dispatch =
-    let isFilledBySolver = state.InitialBoard.[row].[col].IsNone && state.CurrentBoard.[row].[col].IsSome
+    let cellRef = React.useRef None
+    let isFilledBySolver = state.CurrentBoard.[row].[col].IsSome && state.UserBoard.[row].[col].IsNone
+    let isFocused = (row, col) = state.FocusedCell
+    
+    React.useEffect (fun () -> if isFocused then cellRef.current?focus() |> ignore)
+
     Html.td [
         prop.style [
             style.width 50
             style.height 50
             style.borderStyle.solid
-            style.borderWidth 1
             style.borderColor "black"
             style.textAlign.center
-            style.backgroundColor (if isFilledBySolver then "lightgreen" else "white")
+            style.backgroundColor (if isFilledBySolver then "green" else "white")
         ]
         prop.children [
             Html.input [
+                prop.ref cellRef
                 prop.id (sprintf "cell-%d-%d" row col)
-                prop.className (sprintf "cell-%d-%d" row col)
+                prop.className (sprintf "cell -%d-%d" row col)
                 prop.style [ style.width (length.percent 100); style.height (length.percent 100); style.textAlign.center ]
                 prop.type'.text
-                prop.value (match state.CurrentBoard.[row].[col] with None -> "" | Some v -> string v)
+                prop.value (match state.CurrentBoard.[row].[col] with | Some v -> string v | None -> "" )
                 prop.maxLength 1
-                prop.onChange (fun (newValue: string) -> CellValueChanged (row, col, newValue) |> dispatch)
+                prop.onChange (fun (newValue: string) -> 
+                    if validateSingleDigit newValue then
+                        let intValue = if newValue = "" then None else Some <| int newValue
+                        CellValueChanged (row, col, intValue) |> dispatch)
+                prop.onKeyDown (fun keyEvent -> 
+                    match keyEvent.key with
+                    | "ArrowUp" -> MoveFocus (-1, 0) |> dispatch
+                    | "ArrowDown" -> MoveFocus (1, 0) |> dispatch
+                    | "ArrowLeft" -> MoveFocus (0, -1) |> dispatch
+                    | "ArrowRight" -> MoveFocus (0, 1) |> dispatch
+                    | _ -> ())
             ]
         ]
     ]
@@ -82,18 +119,30 @@ let SudokuSolverView () =
     React.fragment [
         Html.div [
             prop.children [
-                Html.h1 "Sudoku Solver"
-                Html.p "Enter the sudoku puzzle below and click the Solve button to solve it."
+                Html.p [
+                    prop.style [ style.display.flex; style.justifyContent.center; style.alignItems.center ]
+                    prop.text "Enter a sudoku puzzle below and click the Solve button to fill it out"
+                ]
                 Html.br []
                 Html.div [
                     prop.style [ style.display.flex; style.justifyContent.center; style.alignItems.center ]
                     prop.children [ 
                         sudokuBoard state dispatch
+                    ]
+                ]
+                Html.br []
+                Html.div [
+                    prop.style [ style.display.flex; style.justifyContent.center; style.alignItems.center ]
+                    prop.children [ 
                         Daisy.button.button [
-                            button.outline
-                            button.primary
+                            button.accent
                             prop.text "Solve"
                             prop.onClick (fun _ -> SolveSudoku state.CurrentBoard |> dispatch)
+                        ]
+                        Daisy.button.button [
+                            button.ghost
+                            prop.text "Clear"
+                            prop.onClick (fun _ -> dispatch StartNewPuzzle)
                         ]
                     ]
                 ]
