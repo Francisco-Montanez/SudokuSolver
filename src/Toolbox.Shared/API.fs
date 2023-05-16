@@ -8,25 +8,21 @@ module SudokuSolver =
 
     type Possibilities = Set<int>[][]
 
-    let updateBoard (initialBoard:Board) (board:Board) (possibilities:Possibilities) (row:int) (col:int) value : Board * Possibilities =
-        match initialBoard.[row].[col] with
-        | Some _ -> board, possibilities
-        | None ->
-            let updatedRow = Array.copy board.[row]
-            updatedRow.[col] <- value
-            let updatedBoard = Array.copy board
-            updatedBoard.[row] <- updatedRow
-            let updatedPossibilities = Array.init 9 (fun i -> Array.init 9 (fun j -> 
-                if i = row && j = col then Set.empty 
-                else if i = row || j = col || (i / 3 = row / 3 && j / 3 = col / 3) then 
-                    match value with
-                    | Some v -> Set.remove v possibilities.[i].[j]
-                    | None -> possibilities.[i].[j]
-                else possibilities.[i].[j]))
-            updatedBoard, updatedPossibilities
+    let updateBoard (board:Board) (possibilities:Possibilities) (row:int) (col:int) value : Board * Possibilities =
+        let updatedRow = Array.copy board.[row]
+        updatedRow.[col] <- value
+        let updatedBoard = Array.copy board
+        updatedBoard.[row] <- updatedRow
+        let updatedPossibilities = Array.init 9 (fun i -> Array.init 9 (fun j -> 
+            if i = row && j = col then Set.empty 
+            else if i = row || j = col || (i / 3 = row / 3 && j / 3 = col / 3) then 
+                match value with
+                | Some v -> Set.remove v possibilities.[i].[j]
+                | None -> possibilities.[i].[j]
+            else possibilities.[i].[j]))
+        updatedBoard, updatedPossibilities
 
-
-    let applyNakedSingle initialBoard (board: Board) (possibilities: Possibilities) =
+    let applyNakedSingle (board: Board) (possibilities: Possibilities) =
         let mutable updated = false
         let mutable board = board
         let mutable possibilities = possibilities
@@ -34,13 +30,13 @@ module SudokuSolver =
             for c in 0..8 do
                 if board.[r].[c] = None && Set.count possibilities.[r].[c] = 1 then
                     let value = possibilities.[r].[c] |> Seq.head |> Some
-                    let newBoard, newPossibilities = updateBoard initialBoard board possibilities r c value
+                    let newBoard, newPossibilities = updateBoard board possibilities r c value
                     board <- newBoard
                     possibilities <- newPossibilities
                     updated <- true
         updated, board, possibilities
 
-    let applyHiddenSingle initialBoard (board: Board) (possibilities: Possibilities) =
+    let applyHiddenSingle (board: Board) (possibilities: Possibilities) =
         let mutable updated = false
         let mutable board = board
         let mutable possibilities = possibilities
@@ -52,7 +48,7 @@ module SudokuSolver =
                         let singleInCol = Array.forall (fun x -> not (Set.contains value x)) (Array.init 9 (fun i -> if i = r then Set.empty else possibilities.[i].[c]))
                         let singleInBox = Array.forall (fun x -> not (Set.contains value x)) (Array.init 9 (fun i -> if (i / 3 = r / 3 && i % 3 = c / 3) then Set.empty else possibilities.[3 * (r / 3) + i / 3].[3 * (c / 3) + i % 3]))
                         if singleInRow || singleInCol || singleInBox then
-                            let newBoard, newPossibilities = updateBoard initialBoard board possibilities r c (Some value)
+                            let newBoard, newPossibilities = updateBoard board possibilities r c (Some value)
                             board <- newBoard
                             possibilities <- newPossibilities
                             updated <- true
@@ -67,12 +63,12 @@ module SudokuSolver =
             )
         )
 
-    let rec solveSudoku initialBoard (board: Board) (possibilities: Possibilities) =
+    let rec solveSudoku (board: Board) (possibilities: Possibilities) =
         let rec applyStrategies board possibilities =
-            let updated, newBoard, newPossibilities = applyNakedSingle initialBoard board possibilities
+            let updated, newBoard, newPossibilities = applyNakedSingle board possibilities
             if updated then applyStrategies newBoard newPossibilities
             else
-                let updated, newBoard, newPossibilities = applyHiddenSingle initialBoard board possibilities
+                let updated, newBoard, newPossibilities = applyHiddenSingle board possibilities
                 if updated then applyStrategies newBoard newPossibilities
                 else newBoard, newPossibilities
         let updatedBoard, updatedPossibilities = applyStrategies board possibilities
@@ -81,8 +77,8 @@ module SudokuSolver =
         | Some (row, col) ->
             updatedPossibilities.[row].[col]
             |> Seq.tryPick (fun value ->
-                let newBoard, newPossibilities = updateBoard initialBoard (Array.map Array.copy updatedBoard) (Array.map Array.copy updatedPossibilities) row col (Some value)
-                solveSudoku initialBoard newBoard newPossibilities
+                let newBoard, newPossibilities = updateBoard (Array.map Array.copy updatedBoard) (Array.map Array.copy updatedPossibilities) row col (Some value)
+                solveSudoku newBoard newPossibilities
             )
         | None -> Some updatedBoard
 
@@ -90,7 +86,7 @@ open SudokuSolver
 
 type Service = {
     GetMessage : bool -> Async<string>
-    SolveSudoku: Board -> Board -> Async<Board>
+    SolveSudoku: Board -> Async<Board>
 }
 with
     static member RouteBuilder _ m = sprintf "/api/service/%s" m

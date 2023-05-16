@@ -16,9 +16,9 @@ let service = {
         }
         |> Async.AwaitTask
 
-    SolveSudoku = fun initalBoard currentBoard ->
+    SolveSudoku = fun currentBoard ->
         task {
-            let solvedSudoku = Toolbox.Shared.API.SudokuSolver.solveSudoku initalBoard currentBoard (Toolbox.Shared.API.SudokuSolver.getPossibilities currentBoard)
+            let solvedSudoku = Toolbox.Shared.API.SudokuSolver.solveSudoku currentBoard (Toolbox.Shared.API.SudokuSolver.getPossibilities currentBoard)
             printfn $"Solved sudoku puzzle: {solvedSudoku}"
             return (if Option.isNone solvedSudoku then currentBoard else solvedSudoku.Value)
         }
