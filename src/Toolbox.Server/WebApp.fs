@@ -15,6 +15,14 @@ let service = {
             else return ServerError.failwith (ServerError.Exception "OMG, something terrible happened")
         }
         |> Async.AwaitTask
+
+    SolveSudoku = fun board ->
+        task {
+            let solvedSudoku = Toolbox.Shared.API.solveSudoku board (getPossibilities board)
+            printfn $"Solved sudoku puzzle: {solvedSudoku}"
+            return (if Option.isNone solvedSudoku then board else solvedSudoku.Value)
+        }
+        |> Async.AwaitTask
 }
 
 let webApp : HttpHandler =

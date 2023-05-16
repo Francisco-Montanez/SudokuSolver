@@ -3,113 +3,50 @@ module Toolbox.Client.Pages.SudokuSolver
 open Feliz
 open Elmish
 open Feliz.UseElmish
+open Feliz.DaisyUI
+open Toolbox.Shared.API
+open Toolbox.Client.Server
 
-type Cell = int option
-type Board = Cell list list
-
-type State = { Board: Board }
+type State = { Board: Board; Possibilities: Possibilities }
 
 type Msg =
     | CellValueChanged of int * int * string
+    | SolveSudoku of Board
+    | SolveSudokuResult of ServerResult<Board>
 
-let board: Board = [
-    [Some 5; None; Some 3; None; None; None; None; None; None];
-    [Some 6; None; None; Some 1; Some 9; Some 5; None; None; None];
-    [None; Some 9; Some 8; None; None; None; None; Some 6; None];
-    [Some 8; None; None; None; Some 6; None; None; None; Some 3];
-    [Some 4; None; None; Some 8; None; Some 3; None; None; Some 1];
-    [Some 7; None; None; None; Some 2; None; None; None; Some 6];
-    [None; Some 6; None; None; None; None; Some 2; Some 8; None];
-    [None; None; None; Some 4; Some 1; Some 9; None; None; Some 5];
-    [None; None; None; None; Some 8; None; Some 1; None; Some 9];
-]
+let initboard: Board =
+    [|
+        [| Some 1; Some 9; None; Some 8; Some 5; Some 2; Some 4; Some 6; Some 7 |] // 3
+        [| Some 5; Some 2; Some 4; Some 6; Some 7; Some 1; Some 3; Some 9; Some 8 |]
+        [| Some 8; Some 7; Some 6; Some 3; Some 9; Some 4; Some 5; Some 2; Some 1 |]
+        [| Some 9; Some 5; Some 2; Some 4; Some 1; Some 6; Some 7; Some 8; Some 3 |]
+        [| Some 3; Some 1; Some 8; Some 5; Some 2; Some 7; Some 9; Some 4; Some 6 |]
+        [| Some 6; Some 4; Some 7; Some 9; Some 3; Some 8; Some 2; Some 1; Some 5 |]
+        [| Some 4; Some 3; Some 9; Some 1; Some 6; Some 5; Some 8; Some 7; Some 2 |]
+        [| Some 7; Some 6; Some 5; Some 2; Some 8; Some 9; Some 1; Some 3; Some 4 |]
+        [| Some 2; Some 8; Some 1; Some 7; Some 4; Some 3; Some 6; Some 5; Some 9 |]
+    |]
 
-let init () = { Board = board }, Cmd.none
-
-let updateBoard (board:Board) (row:int) (col:int) value : Board =
-    
-    let updatedRow =
-        board
-        |> List.item row
-        |> List.mapi (fun i cell -> if i = col then value else cell)
-    
-    board 
-    |> List.mapi (fun i currentRow -> if i = row then updatedRow else currentRow)
+let init () = { Board = initboard; Possibilities = getPossibilities initboard }, Cmd.none
 
 let update (msg:Msg) (state:State) =
     match msg with
     | CellValueChanged (row, col, value) ->
         printfn "Set value for cell (%d, %d) to %A" row col value
-        let updatedBoard = updateBoard state.Board row col (if value = "" then None else Some <| int value)
-        { state with Board = updatedBoard }, Cmd.none
-
-
-let getPossibleValues (board: Board) row col =
-    let values = Set [1..9] |> Set.map Some
-    let indices = [0..8]
-    let rowValues = indices |> List.map (fun i -> List.item i (List.item row board)) |> Set.ofList
-    let colValues = indices |> List.map (fun i -> List.item col (List.item i board)) |> Set.ofList
-    let boxRow, boxCol = row / 3 * 3, col / 3 * 3
-    let boxValues = [for r in boxRow..boxRow + 2 do for c in boxCol..boxCol + 2 -> List.item c (List.item r board)] |> Set.ofList
-    Set.difference values (Set.unionMany [rowValues; colValues; boxValues]) |> Set.toList
-
-let applyNakedSingle (board: Board) =
-    let mutable updated = false
-    let mutable board = board
-    for r in 0..8 do
-        for c in 0..8 do
-            if List.item c (List.item r board) = None then
-                let possibleValues = getPossibleValues board r c
-                if List.length possibleValues = 1 then
-                    board <- updateBoard board r c (List.head possibleValues)
-                    updated <- true
-    updated
-
-let applyHiddenSingle (board: Board) =
-    let mutable updated = false
-    let mutable board = board
-    for value in [1..9] do
-        for r in 0..8 do
-            for c in 0..8 do
-                if List.item c (List.item r board) = None then
-                    let rowPeers = [for i in 0..8 -> List.item i (List.item r board)] |> List.filter ((<>) None)
-                    let colPeers = [for i in 0..8 -> List.item c (List.item i board)] |> List.filter ((<>) None)
-                    let boxRow, boxCol = r / 3 * 3, c / 3 * 3
-                    let boxPeers = [for i in boxRow..boxRow + 2 do for j in boxCol..boxCol + 2 -> List.item j (List.item i board)] |> List.filter ((<>) None)
-                    let hiddenSingle = not (List.exists ((=) (Some value)) rowPeers) && not (List.exists ((=) (Some value)) colPeers) && not (List.exists ((=) (Some value)) boxPeers)
-                    if hiddenSingle then
-                        board <- updateBoard board r c (Some value)
-                        updated <- true
-    updated
-
-let rec solveSudoku (board: Board) =
-    let applyStrategies board =
-        let rec applyStrategiesTailRec board updated =
-            if updated then
-                let nakedSingleApplied = applyNakedSingle board
-                let hiddenSingleApplied = applyHiddenSingle board
-                applyStrategiesTailRec board (nakedSingleApplied || hiddenSingleApplied)
-            else
-                board
-        applyStrategiesTailRec board true
-
-    let updatedBoard = applyStrategies board
-    let emptyCell = Seq.tryFind (fun (r, c) -> (List.item c (List.item r updatedBoard)) = None) [for r in 0..8 do for c in 0..8 -> (r, c)]
-
-    emptyCell
-    |> Option.map (fun (row, col) ->
-        getPossibleValues updatedBoard row col
-        |> List.tryPick (fun value ->
-            let newBoard = List.map (List.map id) updatedBoard
-            let updatedBoard = updateBoard newBoard row col value
-            solveSudoku updatedBoard
-        )
-    )
-    |> Option.defaultWith (fun () -> Some updatedBoard)
-
+        let updatedBoard, possibilities = updateBoard state.Board (getPossibilities state.Board) row col (if value = "" then None else Some <| int value)
+        { state with Board = updatedBoard; Possibilities = possibilities }, Cmd.none
+    | SolveSudoku board ->
+        printfn "Solving sudoku puzzle..."
+        state, Cmd.OfAsync.eitherAsResult (fun _ -> service.SolveSudoku board) SolveSudokuResult
+    | SolveSudokuResult (Ok board) -> 
+        printfn $"Got sudoku result response: {board}"
+        { state with Board = board }, Cmd.none
+    | SolveSudokuResult (Error error) -> 
+        printfn $"Got sudoku result server error: {error}"
+        state, Cmd.none
 
 let cell (row: int) (col: int)  =
-    let state, dispatch = React.useElmish(init, update)
+    let state, dispatch = React.useElmish(init, update, [| |])
     Html.td [
         prop.style [
             style.width 50
@@ -124,29 +61,29 @@ let cell (row: int) (col: int)  =
                 prop.id (sprintf "cell-%d-%d" row col)
                 prop.className (sprintf "cell-%d-%d" row col)
                 prop.style [ style.width (length.percent 100); style.height (length.percent 100); style.textAlign.center ]
-                prop.type'.text
+                // prop.type'.text
                 prop.value (if state.Board.[row].[col] = None then "" else state.Board.[row].[col] |> string)
                 prop.maxLength 1
-                prop.onChange (fun (newValue: string) -> CellValueChanged (row, col, newValue) |> dispatch)
+                prop.onChange (fun (newValue: string) -> printfn $"newvalue={newValue}"; CellValueChanged (row, col, newValue) |> dispatch)
             ]
         ]
     ]
 
-
-let row (rowIndex: int) (rowData: Cell list) =
+let row (rowIndex: int) (rowData: Cell []) =
     Html.tr [
-        prop.children [ for (colIndex, cellValue) in rowData |> List.indexed -> cell rowIndex colIndex ]
+        prop.children [ for (colIndex, cellValue) in rowData |> Array.indexed -> cell rowIndex colIndex ]
     ]
 
 let sudokuBoard (board: Board) =
     Html.table [
         Html.tbody [
-            prop.children [ for (rowIndex, boardRow) in board |> List.indexed -> row rowIndex boardRow ]
+            prop.children [ for (rowIndex, boardRow) in board |> Array.indexed -> row rowIndex boardRow ]
         ]
     ]
 
 [<ReactComponent>]
 let SudokuSolverView () =
+    let state, dispatch = React.useElmish(init, update)
     React.fragment[
         Html.div [
             prop.children [
@@ -155,7 +92,15 @@ let SudokuSolverView () =
                 Html.br []
                 Html.div [
                     prop.style [ style.display.flex; style.justifyContent.center; style.alignItems.center ]
-                    prop.children [ sudokuBoard board ]
+                    prop.children [ 
+                        sudokuBoard state.Board
+                        Daisy.button.button [
+                            button.outline
+                            button.primary
+                            prop.text "Solve"
+                            prop.onClick (fun _ -> state.Board |> SolveSudoku |> dispatch)
+                        ]
+                    ]
                 ]
             ]
         ]
